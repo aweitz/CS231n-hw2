@@ -101,7 +101,8 @@ def rmsprop(x, dx, config=None):
     # config['cache'].                                                        #
     ###########################################################################
     cache = config['decay_rate'] * config['cache'] + (1 - config['decay_rate']) * dx**2
-    next_x = x - config['learning_rate'] * dx / (np.sqrt(config['cache']) + config['epsilon'])
+    next_x = x - config['learning_rate'] * dx / (np.sqrt(cache) + config['epsilon'])
+    config['cache'] = cache
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -137,7 +138,8 @@ def adam(x, dx, config=None):
     # TODO: Implement the Adam update formula, storing the next value of x in #
     # the next_x variable. Don't forget to update the m, v, and t variables   #
     # stored in config.                                                       #
-    ###########################################################################
+    ########################################################################### 
+    t = config['t']
     beta1 = config['beta1']
     beta2 = config['beta2']
     learning_rate = config['learning_rate']
@@ -145,9 +147,16 @@ def adam(x, dx, config=None):
     v = config['v']
     eps = config['epsilon']
 
+    t += 1
     m = beta1*m + (1.0-beta1)*dx
     v = beta2*v + (1.0-beta2)*(dx**2)
-    next_x = x - learning_rate * m / (np.sqrt(v) + eps)
+    mhat = m/(1.0-beta1**t)
+    vhat = v/(1.0-beta2**t)
+    next_x = x - learning_rate * mhat / (np.sqrt(vhat) + eps)
+    
+    config['m'] = m
+    config['v'] = v
+    config['t'] = t
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
