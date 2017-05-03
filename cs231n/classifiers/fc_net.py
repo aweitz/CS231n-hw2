@@ -249,7 +249,10 @@ class FullyConnectedNet(object):
         for cnt in range(num_layers-1):
             out, cacheTemp = affine_relu_forward(out, self.params['W' + str(cnt+1)], self.params['b' + str(cnt+1)])
             cacheList.append(cacheTemp)
-        
+            if self.use_dropout:
+                out, cacheTemp = dropout_forward(out,self.dropout_param)
+                cacheList.append(cacheTemp)
+
         # perform last fully connected Affine, add cache to list
         scores,cacheTemp = affine_forward(out,self.params['W' + str(num_layers)],self.params['b' + str(num_layers)])
         cacheList.append(cacheTemp)
@@ -292,6 +295,8 @@ class FullyConnectedNet(object):
         
         # calculate gradients on (L-1) affine-ReLU layers
         for cnt in range(num_layers-1,0,-1):
+            if self.use_dropout: 
+                da = dropout_backward(da,cacheList.pop()) # pop off dropout cache
             da, dW, db = affine_relu_backward(da,cacheList.pop())
             grads['W' + str(cnt)] = dW + self.reg*self.params['W' + str(cnt)]
             grads['b' + str(cnt)] = np.squeeze(db)            
