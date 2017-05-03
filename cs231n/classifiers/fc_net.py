@@ -180,10 +180,18 @@ class FullyConnectedNet(object):
         ############################################################################
         dimvec = np.append(np.append(input_dim,hidden_dims),num_classes)
         for cnt in range(dimvec.size-1):
-            wlab = 'W' + str(cnt+1)
-            blab = 'b' + str(cnt+1)
-            self.params[wlab] = weight_scale * np.random.randn(dimvec[cnt], dimvec[cnt+1])
-            self.params[blab] = np.zeros(dimvec[cnt+1])
+            w_label = 'W' + str(cnt+1)
+            b_label = 'b' + str(cnt+1)
+            self.params[w_label] = weight_scale * np.random.randn(dimvec[cnt], dimvec[cnt+1])
+            self.params[b_label] = np.zeros(dimvec[cnt+1])
+        
+        # one fewer set of parameters for BN since affine is performed at the end (without BN)
+        if self.use_batchnorm:
+            for cnt in range(dimvec.size-2):
+                gamma_label = 'gamma' + str(cnt+1)
+                bnbeta_label = 'beta'  + str(cnt+1)
+                self.params[gamma_label] = np.ones(dimvec[cnt+1])
+                self.params[bnbeta_label] = np.zeros(dimvec[cnt+1])
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -208,9 +216,8 @@ class FullyConnectedNet(object):
 
         # Cast all parameters to the correct datatype
         for k, v in self.params.items():
-            self.params[k] = v.astype(dtype)
-
-
+            self.params[k] = v.astype(dtype)    
+    
     def loss(self, X, y=None):
         """
         Compute loss and gradient for the fully-connected net.
@@ -245,10 +252,29 @@ class FullyConnectedNet(object):
         cacheList = list()
         out = X
         
-        # perform (L-1) Affine-ReLUs, add caches to list
+        # perform (L-1) Affine-ReLUs (with optional BN + dropout), add caches to list
         for cnt in range(num_layers-1):
-            out, cacheTemp = affine_relu_forward(out, self.params['W' + str(cnt+1)], self.params['b' + str(cnt+1)])
+            w_label = 'W' + str(cnt+1)
+            b_label = 'b' + str(cnt+1)
+            gamma_label = 'gamma' + str(cnt+1)
+            bnbeta_label = 'beta' + str(cnt+1)
+            
+            # add affine layer 
+            out, cacheTemp = affine_forward(out, self.params[w_label], self.params[b_label])
             cacheList.append(cacheTemp)
+            
+            # add optional batchnorm layer
+            if self.use_batchnorm:
+                out, cacheTemp = batchnorm_forward(out, self.params[gamma_label], \
+                                                        self.params[bnbeta_label],\
+                                                        self.bn_params[cnt])
+                cacheList.append(cacheTemp)
+
+            # add ReLu nonlinearity layer
+            out, cacheTemp = relu_forward(out)
+            cacheList.append(cacheTemp)
+            
+            # add optional dropout layer
             if self.use_dropout:
                 out, cacheTemp = dropout_forward(out,self.dropout_param)
                 cacheList.append(cacheTemp)
@@ -293,14 +319,29 @@ class FullyConnectedNet(object):
         grads['W' + str(num_layers)] = dW + self.reg*self.params['W' + str(num_layers)]
         grads['b' + str(num_layers)] = np.squeeze(db)
         
-        # calculate gradients on (L-1) affine-ReLU layers
+        # calculate gradients on (L-1) affine-(BN)-ReLU-(dropout) layers
         for cnt in range(num_layers-1,0,-1):
+            
+            # backpropagate through dropout
             if self.use_dropout: 
                 da = dropout_backward(da,cacheList.pop()) # pop off dropout cache
-            da, dW, db = affine_relu_backward(da,cacheList.pop())
+                
+            # backpropagate through ReLU non-linearity
+            da = relu_backward(da,cacheList.pop())    
+            
+            # backpropagate through BN
+            if self.use_batchnorm:
+                da, dgamma, dbeta  = batchnorm_backward(da,cacheList.pop())
+                grads['gamma' + str(cnt)] = dgamma
+                grads['beta' + str(cnt)] = dbeta
+            
+            # backpropagate through affine layer
+            da, dW, db = affine_backward(da,cacheList.pop())
             grads['W' + str(cnt)] = dW + self.reg*self.params['W' + str(cnt)]
             grads['b' + str(cnt)] = np.squeeze(db)            
-        dx = da        
+            
+        dx = da
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
