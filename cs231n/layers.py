@@ -386,7 +386,43 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
+    N,C,H,W = x.shape
+    F,_,HH,WW = w.shape
+    stride  = conv_param['stride']
+    pad     = conv_param['pad']
+    
+    Hnew = 1 + (H + 2 * pad - HH) / stride
+    Wnew = 1 + (W + 2 * pad - WW) / stride 
+    out = np.zeros((N,F,Hnew,Wnew))
+    
+    eps = 1e-6
+    if (Hnew % 1 > eps) or (Wnew % 1 > eps):
+        print('new dimension is not an integer...')
+    Hnew = int(Hnew)
+    Wnew = int(Wnew)
+                  
+    # iterate over data
+    for i in range(N):
+        
+        # pad each image
+        im = np.pad(x[i],((0,0),(pad,pad),(pad,pad)),'constant', constant_values=(0,0))
+        
+        # iterate over filters
+        for f in range(F):
+            convFilt = w[f]
+
+            # slide over padded image
+            for hcnt in range(Hnew):
+                for wcnt in range(Wnew):
+                    
+                    # extract tinyimage to convolve
+                    tinyimageHidx = np.arange(HH)+stride*hcnt
+                    tinyimageWidx = np.arange(WW)+stride*wcnt
+                    tinyimage     = im[np.ix_(np.arange(C),tinyimageHidx,tinyimageWidx)]
+                    
+                    # perform "convolution"
+                    out[i,f,hcnt,wcnt] = np.sum(tinyimage*convFilt) + b[f]
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
