@@ -447,7 +447,53 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    pass
+    x, w, b, conv_param = cache
+    dw = np.zeros(w.shape)
+    db = np.zeros(b.shape)
+    
+    N,C,H,W = x.shape    # also dx shape
+    F,_,HH,WW = w.shape  # also dw shape
+    
+    stride  = conv_param['stride']
+    pad     = conv_param['pad']
+    Hnew = int(1 + (H + 2 * pad - HH) / stride)
+    Wnew = int(1 + (W + 2 * pad - WW) / stride)
+   
+    dxTmp = np.zeros([sum(x) for x in zip(x.shape,(0,0,2*pad,2*pad))])
+    for f in range(F):
+        # calculate db through addition gate
+        db[f] = np.sum(dout[:,f,:,:])
+        
+        # make running dW to sum over data examples and windows
+        dwTmp = np.zeros((C,HH,WW))
+        
+        # iterate over training examples
+        for i in range(N):
+            
+            # pad image
+            im = np.pad(x[i],((0,0),(pad,pad),(pad,pad)),'constant', constant_values=(0,0))
+            
+            # slide over padded image
+            for hcnt in range(Hnew):
+                for wcnt in range(Wnew):
+                    
+                    # extract tinyimage (a subimage of x) to multiply with dout and calculate dW gradients
+                    tinyimageHidx = np.arange(HH)+stride*hcnt
+                    tinyimageWidx = np.arange(WW)+stride*wcnt
+                    tinyimage     = im[np.ix_(np.arange(C),tinyimageHidx,tinyimageWidx)]
+                    dwTmp += dout[i,f,hcnt,wcnt]*tinyimage
+                    
+                    # calculate tinydx (dout * filter) and place in dxTmp
+                    tinydx = dout[i,f,hcnt,wcnt]*w[f,:,:,:]                    
+                    dxTmp[np.ix_([i],np.arange(C),tinyimageHidx,tinyimageWidx)] += tinydx
+        
+        # save summed dW to output gradient for this filter
+        dw[np.ix_([f],np.arange(C),np.arange(HH),np.arange(WW))] = dwTmp
+    
+    # crop dxTmp
+    cropHidx = np.arange(pad,dxTmp.shape[2]-pad)
+    cropWidx = np.arange(pad,dxTmp.shape[3]-pad)
+    dx = dxTmp[np.ix_(np.arange(N),np.arange(C),cropHidx,cropWidx)]
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -473,11 +519,42 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # TODO: Implement the max pooling forward pass                            #
     ###########################################################################
-    pass
+    N,C,H,W = x.shape
+    pool_height = pool_param['pool_height']
+    pool_width  = pool_param['pool_width']
+    stride      = pool_param['stride']
+    
+    numHpools = 1 + (H - pool_height) / stride
+    numWpools = 1 + (W - pool_width) / stride 
+    
+    eps = 1e-6
+    if (numHpools % 1 > eps) or (numWpools % 1 > eps):
+        print('new dimension is not an integer...')
+    numHpools = int(numHpools)
+    numWpools = int(numWpools)
+    
+    out = np.zeros((N,C,numHpools,numWpools))
+    mask = np.zeros(out.shape)
+    
+    # iterate over images
+    for i in range(N):
+        im = x[i]
+        
+        # iterate over channel
+        for c in range(C):
+            # slide pooling window over image
+            for hcnt in range(numHpools):
+                for wcnt in range(numWpools):
+                    poolHidx = np.arange(pool_height)+stride*hcnt
+                    poolWidx = np.arange(pool_width)+stride*wcnt
+                    tinyimage = im[np.ix_([c],poolHidx,poolWidx)]
+                    out[i,c,hcnt,wcnt]  = np.amax(tinyimage)
+                    mask[i,c,hcnt,wcnt] = np.argmax(tinyimage)
+                
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
-    cache = (x, pool_param)
+    cache = (x, pool_param, mask)
     return out, cache
 
 
@@ -496,7 +573,45 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the max pooling backward pass                           #
     ###########################################################################
-    pass
+    x, pool_param, mask = cache
+    N,C,H,W = x.shape
+    pool_height = pool_param['pool_height']
+    pool_width  = pool_param['pool_width']
+    stride      = pool_param['stride']
+    
+    numHpools = 1 + (H - pool_height) / stride
+    numWpools = 1 + (W - pool_width) / stride 
+    
+    eps = 1e-6
+    if (numHpools % 1 > eps) or (numWpools % 1 > eps):
+        print('new dimension is not an integer...')
+    numHpools = int(numHpools)
+    numWpools = int(numWpools)
+    
+    dx = np.zeros(x.shape)   
+    
+    # iterate over images
+    for i in range(N):
+        im = x[i]
+        
+        # iterate over channel
+        for c in range(C):
+            
+            # slide pooling window over image
+            for hcnt in range(numHpools):
+                for wcnt in range(numWpools):
+                    
+                    # get "max" index from mask and route that value to dx submatrix
+                    maxidx = mask[i,c,hcnt,wcnt]
+                    tinyimage = np.ravel(np.zeros((pool_height,pool_width)))
+                    tinyimage[maxidx] = dout[i,c,hcnt,wcnt]
+                    tinyimage = tinyimage.reshape((pool_height,pool_width))
+                    
+                    # add submatrix to larger dx matrix
+                    outHidx = np.arange(pool_height)+stride*hcnt
+                    outWidx = np.arange(pool_width)+stride*wcnt
+                    dx[np.ix_([i],[c],outHidx,outWidx)] = tinyimage
+    
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
